@@ -1,0 +1,1118 @@
+external_components:
+  - source: github://TillFleisch/ESPHome-HLK-LD2450@main
+
+esphome:
+  name: ${thermostat_name}
+  friendly_name: ${thermostat_friendly_name}
+  includes: text_utils.h
+
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+
+# Enable logging
+logger:
+  level: DEBUG
+  # logs:
+  #   component: ERROR
+
+captive_portal:
+
+globals:
+  - id: climate_mode
+    restore_value: 'no'
+    type: std::string
+  - id: active_climate_action
+    restore_value: 'no'
+    type: std::string
+
+time:
+  - platform: homeassistant
+    id: my_time
+    on_time: 
+      - seconds: 0
+        minutes: /1
+        then:
+          - component.update: ${node_id}_tft_display
+    
+
+
+### >>>>>>>>>>>>> Text Sensors <<<<<<<<<<<<<<< ###
+text_sensor:
+    # Last Rain - date time
+  - platform: homeassistant
+    name: outdoor_last_rain_sensor
+    id: outdoor_last_rain_sensor
+    entity_id: sensor.my_weather_station_last_rain
+    internal: true
+    on_value:
+      if:
+        condition:
+          - lambda: 'return id(${node_id}_tft_display).get_active_page() == id(weather_station_page);'
+        then:
+          - component.update: ${node_id}_tft_display
+
+
+
+### >>>>>>>>>>>>> Scripts <<<<<<<<<<<<<<< ###
+script:
+  - id: set_screen_brightness
+    then:
+      if:
+        condition:
+          - lambda: 'return !id(touching).state;'
+        then:
+          - lambda: |-
+              auto illuminance = id(${node_id}_illuminance).state;
+              auto min_distance = std::min({ id(t1_distance).state, id(t2_distance).state, id(t3_distance).state });
+              auto call = id(back_light).turn_on();
+              if (!id(${node_id}_occupancy).state) // No occupancy detected
+              {
+                call.set_brightness(0);
+              }
+              else if (min_distance < 4 && illuminance > 0.4) // within 3ft and illuminance lux is greater than 2
+              {
+                call.set_brightness(1.0);
+              }
+              else if ((min_distance >= 4 && min_distance < 6) || (min_distance < 4 && illuminance <= 0.4)) // Greater than 3ft or less than 3ft and illuminance is less than 2
+              {
+                call.set_brightness(0.35);
+              }
+              call.perform();
+  - id: update_display_on_weather_page
+    then:
+      if:
+        condition:
+          - lambda: 'return id(${node_id}_tft_display).get_active_page() == id(weather_station_page);'
+        then:
+          - component.update: ${node_id}_tft_display
+
+
+### >>>>>>>>>>>>> I2C <<<<<<<<<<<<<<< ###
+i2c:
+  - id: bus_a
+    sda: 21 #  Green
+    scl: 22 #  Blue
+    scan: true
+
+### >>>>>>>>>>>>> Sensors <<<<<<<<<<<<<<< ###
+sensor:
+  - platform: uptime
+    id: ${node_id}_uptime
+    name: Uptime
+### >>>>>>>>>>>>> Humidity Sensor <<<<<<<<<<<<<<< ###
+  - platform: homeassistant
+    id: ${node_id}_humidity
+    entity_id: ${humidity_sensor_entity_id}
+    internal: true
+### >>>>>>>>>>>>> Temperature Sensor <<<<<<<<<<<<<<< ###
+  - platform: homeassistant
+    id: ${node_id}_temp
+    entity_id: ${temp_sensor_entity_id}
+    internal: true
+    filters:
+      - lambda: return (x - 32.0) * (5.0/9.0);
+    on_value: 
+      then:
+        - component.update: ${node_id}_tft_display
+### >>>>>>>>>>>>> Ambient Light Sensor <<<<<<<<<<<<<<< ###
+  - platform: bh1750
+    id: ${node_id}_illuminance
+    name: BH1750 Illuminance
+    address: 0x23
+    update_interval: 1s
+### >>>>>>>>>>>>> Weather Station Sensors <<<<<<<<<<<<<<< ###
+    # Temp
+  - platform: homeassistant
+    id: outdoor_temp_sensor
+    entity_id: sensor.my_weather_station_temp
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Humidity
+  - platform: homeassistant
+    id: outdoor_humidity_sensor
+    entity_id: sensor.my_weather_station_humidity
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Feels Like Temp
+  - platform: homeassistant
+    id: outdoor_feels_like_temp_sensor
+    entity_id: sensor.my_weather_station_feels_like
+    internal: true
+    on_value: 
+      then:
+        - component.update: ${node_id}_tft_display
+    # Absolute Pressure
+  - platform: homeassistant
+    id: outdoor_absolute_pressure_sensor
+    entity_id: sensor.my_weather_station_abs_pressure
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Relative Pressure
+  - platform: homeassistant
+    id: outdoor_relative_pressure_sensor
+    entity_id: sensor.my_weather_station_rel_pressure
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Dew Point
+  - platform: homeassistant
+    id: outdoor_dew_point_sensor
+    entity_id: sensor.my_weather_station_dew_point
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Solar UV Index
+  - platform: homeassistant
+    id: outdoor_solar_uv_index_sensor
+    entity_id: sensor.my_weather_station_uv_index
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Solar Rad W/m2
+  - platform: homeassistant
+    id: outdoor_solar_rad_watts_sensor
+    entity_id: sensor.my_weather_station_solar_rad
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Solar Rad Lux
+  - platform: homeassistant
+    id: outdoor_solar_rad_lux_sensor
+    entity_id: sensor.my_weather_station_solar_rad_lx
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Wind Speed
+  - platform: homeassistant
+    id: outdoor_wind_speed_sensor
+    entity_id: sensor.my_weather_station_wind_speed
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Wind Direction
+  - platform: homeassistant
+    id: outdoor_wind_direction_sensor
+    entity_id: sensor.my_weather_station_wind_dir
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Wind Gust
+  - platform: homeassistant
+    id: outdoor_wind_gust_sensor
+    entity_id: sensor.my_weather_station_wind_gust
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Event Rain
+  - platform: homeassistant
+    id: outdoor_event_rain_sensor
+    entity_id: sensor.my_weather_station_event_rain
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Hourly Rate Rain
+  - platform: homeassistant
+    id: outdoor_hourly_rain_rate_sensor
+    entity_id: sensor.my_weather_station_hourly_rain_rate
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Daily Rain
+  - platform: homeassistant
+    id: outdoor_daily_rain_sensor
+    entity_id: sensor.my_weather_station_daily_rain
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Weekly Rain
+  - platform: homeassistant
+    id: outdoor_weekly_rain_sensor
+    entity_id: sensor.my_weather_station_weekly_rain
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Monthly Rain
+  - platform: homeassistant
+    id: outdoor_monthly_rain_sensor
+    entity_id: sensor.my_weather_station_monthly_rain
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Yearly Rain
+  - platform: homeassistant
+    id: outdoor_yearly_rain_sensor
+    entity_id: sensor.my_weather_station_yearly_rain
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+    # Lifetime Rain
+  - platform: homeassistant
+    id: outdoor_lifetime_rain_sensor
+    entity_id: sensor.my_weather_station_lifetime_rain
+    internal: true
+    on_value:
+      then: 
+          script.execute: update_display_on_weather_page
+
+
+
+### >>>>>>>>>>>>> LD2450 mmWave SENSOR <<<<<<<<<<<<<<< ###
+uart:
+  id: uart_bus
+  rx_pin: 
+    number: RX # white (old - White/Orange) RX -> TX
+    mode:
+      input: true
+      pullup: true
+  tx_pin: 
+    number: TX # yellow (old - Purple/Yellow) TX -> RX
+    mode:
+      input: true
+      pullup: true
+  baud_rate: 256000
+  parity: NONE
+  stop_bits: 1
+  data_bits: 8
+LD2450:
+  uart_id: uart_bus
+  flip_x_axis: true
+  fast_off_detection: true
+  max_detection_tilt_angle:
+    id: ${node_id}_max_tilt_angle
+    name: Max Tilt Angle
+    initial_value: 60°
+    unit_of_measurement: °
+  min_detection_tilt_angle:
+    id: ${node_id}_min_tilt_angle
+    name: Min Tilt Angle
+    initial_value: -60°
+    unit_of_measurement: °
+  max_detection_distance:
+    id: ${node_id}_max_distance
+    name: Max Distance
+    initial_value: 4m
+    unit_of_measurement: m
+  max_distance_margin: 30cm
+  
+  restart_button:
+    name: "Restart Sensor"
+  factory_reset_button:
+    name: "Factory Reset Sensor"
+
+  tracking_mode_switch:
+    name: "Multiple Target Tracking"
+  bluetooth_switch:
+    name: "Sensor Bluetooth"
+
+  baud_rate_select:
+    name: "Sensor Baud Rate"
+
+  occupancy:
+    id: ${node_id}_occupancy
+    name: Occupancy
+    filters:
+      delayed_off: 5s
+    on_state:
+      then: 
+        - script.execute: set_screen_brightness
+  target_count:
+    id: ${node_id}_target_count
+    name: Target Count
+
+  targets:
+    - target:
+        name: "Target 1"
+        id: t1
+        debug: true
+        x_position:
+            id: t1_xpos
+        y_position:
+            id: t1_ypos
+        speed:
+            id: t1_speed
+        distance_resolution:
+            id: t1_res
+        angle:
+            id: t1_angle
+        distance:
+            id: t1_distance
+            on_value:
+                then:
+                  script.execute: set_screen_brightness
+    - target:
+        name: "Target 2"
+        id: t2
+        x_position:
+            id: t2_xpos
+        y_position:
+            id: t2_ypos
+        speed:
+            id: t2_speed
+        distance_resolution:
+            id: t2_res
+        angle:
+            id: t2_angle
+        distance:
+            id: t2_distance
+            on_value:
+                then:
+                  script.execute: set_screen_brightness
+    - target:
+        name: "Target 3"
+        id: t3
+        x_position:
+            id: t3_xpos
+        y_position:
+            id: t3_ypos
+        speed:
+            id: t3_speed
+        distance_resolution:
+            id: t3_res
+        angle:
+            id: t3_angle
+        distance:
+            id: t3_distance
+            on_value:
+                then:
+                  script.execute: set_screen_brightness
+
+
+
+
+### >>>>>>>>>>>>> Switches <<<<<<<<<<<<<<< ###
+switch:
+  - platform: restart # Restart
+    name: Restart
+    id: ${node_id}_restart
+    icon: "mdi:restart"
+  - platform: shutdown # Shutdown
+    name: Shutdown
+    id: ${node_id}_shutdown
+  - platform: safe_mode # Safe Mode
+    name: Restart (Safe Mode)"
+    id: ${node_id}_safe_mode
+  - platform: template # HVAC Power - Source: https://community.home-assistant.io/t/switch-linked-to-homeassistant-switch/593354/3?u=bsell93
+    id: hvac_power
+    optimistic: true
+    turn_on_action: 
+      - homeassistant.service: 
+          service: switch.turn_on
+          data:
+            entity_id: ${hvac_power_entity_id}
+      - delay: 1s
+      - homeassistant.service: 
+          service: climate.set_hvac_mode
+          data:
+            entity_id: ${hvac_climate_entity_id}
+          data_template:
+            hvac_mode: '{{ mode }}'
+          variables: 
+            mode: |-
+              return id(climate_mode);
+      - delay: 1s
+      - homeassistant.service: 
+          service: climate.set_temperature
+          data:
+            entity_id: ${hvac_climate_entity_id}
+          data_template:
+            temperature: '{{ target_temp }}'
+          variables:
+            target_temp: |-
+              if (id(${node_id}_climate).mode == CLIMATE_MODE_COOL)
+              {
+                return round(id(${node_id}_climate).target_temperature_high * (9.0/5.0) + 32.0) - 1;
+              }
+              return round(id(${node_id}_climate).target_temperature_low * (9.0/5.0) + 32.0) + 1;
+    turn_off_action:
+      - homeassistant.service: 
+          service: switch.turn_off
+          data:
+            entity_id: ${hvac_power_entity_id}
+
+
+
+### >>>>>>>>>>>>> Climate <<<<<<<<<<<<<<< ###
+climate:
+  - platform: thermostat
+    name: "Climate"
+    id: ${node_id}_climate
+    sensor: ${node_id}_temp
+    humidity_sensor: ${node_id}_humidity
+    min_cooling_off_time: 300s
+    min_cooling_run_time: 300s
+    min_heating_off_time: 300s
+    min_heating_run_time: 300s
+    min_idle_time: 300s
+    cool_deadband: 0.25 # half a degree f
+    cool_overrun: 0.25
+    heat_deadband: 0.25
+    heat_overrun: 0.25
+    visual:
+      temperature_step:
+        target_temperature: 1
+        current_temperature: 1
+    cool_action:
+      - lambda: |-
+          id(climate_mode) = "cool";
+          id(active_climate_action) = "cooling";
+      - switch.turn_on: hvac_power
+    heat_action:
+      - lambda: |-
+          id(climate_mode) = "heat";
+          id(active_climate_action) = "heating";
+      - switch.turn_on: hvac_power
+    idle_action:
+      - lambda: |-
+          id(active_climate_action) = "idle";
+      - switch.turn_off: hvac_power
+    on_state: 
+      then:
+        if:
+          condition:
+            - lambda: |-
+                return id(active_climate_action) != "idle";
+          then:
+            - homeassistant.service: 
+                service: climate.set_temperature
+                data:
+                  entity_id: ${hvac_climate_entity_id}
+                data_template:
+                  hvac_mode: '{{ hvac_mode }}'
+                  temperature: '{{ target_temp }}'
+                variables:
+                  hvac_mode: |-
+                    auto mode = id(${node_id}_climate).mode;
+                    if (mode == CLIMATE_MODE_COOL)
+                    {
+                      return "cool";
+                    }
+                    else if (mode == CLIMATE_MODE_HEAT)
+                    {
+                      return "heat";
+                    }
+                    return "off";
+                  target_temp: |-
+                    if (id(${node_id}_climate).mode == CLIMATE_MODE_COOL)
+                    {
+                      return round(id(${node_id}_climate).target_temperature_high * (9.0/5.0) + 32.0) - 1;
+                    }
+                    return round(id(${node_id}_climate).target_temperature_low * (9.0/5.0) + 32.0) + 1;
+    default_preset: Home
+    on_boot_restore_from: memory
+    preset:
+      - name: Home
+        mode: cool
+        default_target_temperature_low: 70 °F
+        default_target_temperature_high: 73 °F
+      - name: Sleep
+        mode: cool
+        default_target_temperature_low: 69 °F
+        default_target_temperature_high: 70 °F
+      - name: Away
+        mode: cool
+        default_target_temperature_low: 65 °F
+        default_target_temperature_high: 80 °F
+
+
+
+### >>>>>>>>>>>>> Image <<<<<<<<<<<<<<< ###
+image:
+  - file: mdi:close
+    id: close_icon
+    resize: 28x28
+  - file: mdi:power
+    id: power_icon
+    resize: 28x28
+  - file: mdi:fire
+    id: heat_icon
+    resize: 28x28
+  - file: mdi:snowflake
+    id: cool_icon
+    resize: 28x28
+  - file: mdi:minus
+    id: minus_icon
+    resize: 40x40
+  - file: mdi:plus
+    id: plus_icon
+    resize: 40x40
+  - file: mdi:home
+    id: home_icon
+    resize: 28x28
+  - file: mdi:key-chain-variant
+    id: away_icon
+    resize: 28x28
+  - file: mdi:power-sleep
+    id: sleep_icon
+    resize: 28x28
+  - file: mdi:water-pump
+    id: recirculation_icon
+    resize: 28x28
+### >>>>>>>>>>>>> Font <<<<<<<<<<<<<<< ###
+font:
+  # gfonts://family[@weight]
+  - file: "gfonts://Roboto"
+    id: roboto_48
+    size: 48
+  - file: "gfonts://Roboto"
+    id: roboto_24
+    size: 24
+  - file: "gfonts://Roboto"
+    id: roboto_16
+    size: 16
+  - file: "gfonts://Roboto"
+    id: roboto_10
+    size: 10
+### >>>>>>>>>>>>> Color <<<<<<<<<<<<<<< ###
+color:
+  - id: heat_red
+    hex: ec780f
+  - id: cool_blue
+    hex: 096dff
+  - id: off_green
+    hex: 08f26d
+  - id: grey
+    hex: D1D0CE
+  - id: dark_grey
+    hex: A0A0A0
+### >>>>>>>>>>>>> SPI <<<<<<<<<<<<<<< ###
+spi:
+  clk_pin: GPIO18 # green
+  mosi_pin: GPIO23 # Blue - MOSI/DIN/SDI
+  miso_pin: GPIO19 # Yellow - MISO/DO/SDO
+
+### >>>>>>>>>>>>> Display <<<<<<<<<<<<<<< ###
+display:
+  - platform: ili9xxx
+    model: ILI9341
+    id: ${node_id}_tft_display
+    dc_pin: GPIO13 # blue
+    cs_pin: GPIO33 # White
+    reset_pin: GPIO26 # yellow
+    dimensions: 
+      height: 240
+      width: 320
+    update_interval: never
+    # auto_clear_enabled: false
+    data_rate: 40MHz
+    transform:
+      swap_xy: true
+      mirror_y: true
+      mirror_x: true
+    pages:
+      ### >>>>>>>>>>>>> Home Page <<<<<<<<<<<<<<< ###
+      - id: home_page
+        lambda: |-
+          // alignment lines
+          // it.line(it.get_width()/2, 0, it.get_width()/2, it.get_height());
+          // it.line(0, it.get_height() / 2, it.get_width(), it.get_height() / 2);
+          // it.line(it.get_width()* 1/4, 0, it.get_width()* 1/4, it.get_height());
+          // it.line(it.get_width()* 3/4, 0, it.get_width()* 3/4, it.get_height());
+          // it.line(it.get_width()* 1/3, 0, it.get_width()* 1/3, it.get_height());
+          // it.line(it.get_width()* 2/3, 0, it.get_width()* 2/3, it.get_height());
+
+          auto preset_icon = id(home_icon);
+          if (id(${node_id}_climate).preset == CLIMATE_PRESET_AWAY)
+          {
+            preset_icon = id(away_icon);
+          }
+          else if (id(${node_id}_climate).preset == CLIMATE_PRESET_SLEEP)
+          {
+            preset_icon = id(sleep_icon);
+          }
+
+          // Define margin and icon size
+          int margin = 5; // 5px
+          int icon_size = 28; // height and width is 28px
+
+          // Render time
+          it.strftime(margin, margin, id(roboto_16), "%I:%M %p", id(my_time).now());
+
+          // Render outdoor feels like temp
+          it.printf(it.get_width() - margin, margin, id(roboto_16), TextAlign::TOP_RIGHT, "%.0f°", id(outdoor_feels_like_temp_sensor).state);
+
+          // Get humidity height/width
+          int humidity_width, humidity_height;
+          std::tie(humidity_width, humidity_height) = GetTextWidthAndHeight(&it, id(roboto_16), "%.0f%%", id(${node_id}_humidity).state);
+
+          // Render Current Preset Icon/Button
+          it.image((it.get_width() / 2) - (icon_size / 2), (it.get_height() / 2) - (humidity_height * 1.75) - icon_size - (margin * 4), preset_icon);
+
+          // Render Current Humidity
+          it.printf((it.get_width() / 2), (it.get_height() / 2) - (humidity_height * 1.5) - (margin * 2), id(roboto_16), TextAlign::CENTER, "%.0f%%", id(${node_id}_humidity).state);
+
+          // Render Current Temp
+          auto current_temp = (id(${node_id}_temp).state * 9/5) + 32;
+          int current_temp_width, current_temp_height;
+          std::tie(current_temp_width, current_temp_height) = GetTextWidthAndHeight(&it, id(roboto_48), "%.0f°", current_temp);
+          it.printf((it.get_width() / 2), it.get_height() / 2, id(roboto_48), TextAlign::CENTER, "%.0f°", current_temp);
+
+          // Render Target Temp
+          auto current_mode = id(${node_id}_climate).mode;
+          auto target_temp = id(${node_id}_climate).target_temperature * (9.0/5.0) + 32.0; // Convert to Fahrenheit
+          auto current_mode_color = id(off_green);
+          auto active_mode_icon = id(power_icon); // mode icon
+          auto is_on = false;
+          if (current_mode == CLIMATE_MODE_HEAT)
+          {
+            target_temp = id(${node_id}_climate).target_temperature_low * (9.0/5.0) + 32.0;
+            current_mode_color = id(heat_red);
+            active_mode_icon = id(heat_icon);
+            is_on = true;
+          }
+          else if (current_mode == CLIMATE_MODE_COOL)
+          {
+            target_temp = id(${node_id}_climate).target_temperature_high * (9.0/5.0) + 32.0;
+            current_mode_color = id(cool_blue);
+            active_mode_icon = id(cool_icon);
+            is_on = true;
+          }
+          if (is_on)
+          {
+            // Render Plus/minus icons
+            it.image((it.get_width()* 1/3) - 20 - margin, it.get_height() / 2 - 20, id(minus_icon));
+            it.image((it.get_width()* 2/3) - 20 + margin, it.get_height() / 2 - 20, id(plus_icon));
+
+            // Render Target Temp
+            int target_temp_width, target_temp_height;
+            std::tie(target_temp_width, target_temp_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%.0f°", target_temp);
+            it.printf((it.get_width() / 2), (it.get_height() / 2) + (current_temp_height * 0.75) + (margin * 2), id(roboto_24), current_mode_color, TextAlign::CENTER, "%.0f°", target_temp);
+
+            // Draw rectangle around target temp to indicate button
+            it.rectangle((it.get_width() / 2) - (target_temp_width / 2) - margin, (it.get_height() / 2) + (current_temp_height / 2) + margin, target_temp_width + (margin * 2), target_temp_height + (margin * 2), current_mode_color);
+          }
+          // Mode icon
+          it.image(margin, it.get_height() - icon_size - margin, active_mode_icon);
+
+          if (id(recirculation_pump).state)
+          {
+            // Recirculation icon
+            it.image(it.get_width() - icon_size - margin, it.get_height() - icon_size - margin, recirculation_icon);
+          }
+      ### >>>>>>>>>>>>> Mode Page <<<<<<<<<<<<<<< ###
+      - id: mode_page
+        lambda: |-
+          // Show time
+          it.strftime(5, 5, id(roboto_16), "%I:%M %p", id(my_time).now());
+          // Show outdoor feels like temp
+          it.printf(it.get_width() - 5, 5, id(roboto_16), TextAlign::TOP_RIGHT, "%.0f°", id(outdoor_feels_like_temp_sensor).state);
+          auto current_mode = id(${node_id}_climate).mode;
+          auto heat_mode_color = id(dark_grey);
+          auto cool_mode_color = id(dark_grey);
+          auto power_mode_color = id(dark_grey);
+          if (current_mode == CLIMATE_MODE_HEAT)
+          {
+            heat_mode_color = id(heat_red);
+          }
+          else if (current_mode == CLIMATE_MODE_COOL)
+          {
+            cool_mode_color = id(cool_blue);
+          }
+          else
+          {
+            power_mode_color = id(off_green);
+          }
+          // Define margin and icon size
+          int margin = 5; // 5px
+          int icon_size = 28; // height and width is 28px
+
+          // Render Cool mode button
+          int cool_width, cool_height;
+          std::tie(cool_width, cool_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%s", "Cool");
+          it.rectangle((it.get_width() * 1/4) - (cool_width / 2) - margin, (it.get_height() / 2) - icon_size - margin, cool_width + (margin * 2), icon_size + cool_height + (margin * 2), cool_mode_color);
+          it.image((it.get_width() * 1/4) - (icon_size / 2), (it.get_height() / 2) - icon_size, id(cool_icon), cool_mode_color);
+          it.print((it.get_width() * 1/4) - (cool_width / 2), it.get_height() / 2, id(roboto_24), cool_mode_color, "Cool");
+
+          // Render Power mode button
+          int power_width, power_height;
+          std::tie(power_width, power_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%s", "Off");
+          int extra_padding = 10;
+          it.rectangle((it.get_width()/2) - (power_width / 2) - margin - extra_padding, (it.get_height() / 2) - icon_size - margin, power_width + (margin * 2) + (extra_padding * 2), icon_size + power_height + (margin * 2), power_mode_color);
+          it.image((it.get_width()/2) - (icon_size / 2), (it.get_height() / 2) - icon_size, id(power_icon), power_mode_color);
+          it.print((it.get_width()/2) - (power_width / 2), it.get_height() / 2, id(roboto_24), power_mode_color, "Off");
+
+          // Render Heat mode button
+          int heat_width, heat_height;
+          std::tie(heat_width, heat_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%s", "Heat");
+          it.rectangle((it.get_width() * 3/4) - (heat_width / 2) - margin, (it.get_height() / 2) - icon_size - margin, heat_width + (margin * 2), icon_size + heat_height + (margin * 2), heat_mode_color);
+          it.image((it.get_width() * 3/4) - (icon_size / 2), (it.get_height() / 2) - icon_size, id(heat_icon), heat_mode_color);
+          it.print((it.get_width() * 3/4) - (heat_width / 2), it.get_height() / 2, id(roboto_24), heat_mode_color, "Heat");
+      ### >>>>>>>>>>>>> Preset Page <<<<<<<<<<<<<<< ###
+      - id: preset_page
+        lambda: |-
+          // Show time
+          it.strftime(5, 5, id(roboto_16), "%I:%M %p", id(my_time).now());
+          // Show outdoor feels like temp
+          it.printf(it.get_width() - 5, 5, id(roboto_16), TextAlign::TOP_RIGHT, "%.0f°", id(outdoor_feels_like_temp_sensor).state);
+          auto current_preset = id(${node_id}_climate).preset;
+          auto home_preset_color = id(dark_grey);
+          auto away_preset_color = id(dark_grey);
+          auto sleep_preset_color = id(dark_grey);
+          if (current_preset == CLIMATE_PRESET_AWAY)
+          {
+            away_preset_color = id(off_green);
+          }
+          else if (current_preset == CLIMATE_PRESET_SLEEP)
+          {
+            sleep_preset_color = id(cool_blue);
+          }
+          else
+          {
+            home_preset_color = id(heat_red);
+          }
+          // Define margin and icon size
+          int margin = 5; // 5px
+          int icon_size = 28; // height and width is 28px
+          
+          // Render Away preset button
+          int away_width, away_height;
+          std::tie(away_width, away_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%s", "Away");
+          it.rectangle((it.get_width() * 1/4) - (away_width / 2) - margin, (it.get_height() / 2) - icon_size - margin, away_width + (margin * 2), icon_size + away_height + (margin * 2), away_preset_color);
+          it.image((it.get_width() * 1/4) - (icon_size / 2), (it.get_height() / 2) - icon_size, id(away_icon), away_preset_color);
+          it.print((it.get_width() * 1/4) - (away_width / 2), it.get_height() / 2, id(roboto_24), away_preset_color, "Away");
+
+          // Render Home preset button
+          int home_width, home_height;
+          std::tie(home_width, home_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%s", "Home");
+          it.rectangle((it.get_width()/2) - (home_width / 2) - margin, (it.get_height() / 2) - icon_size - margin, home_width + (margin * 2), icon_size + home_height + (margin * 2), home_preset_color);
+          it.image((it.get_width()/2) - (icon_size / 2), (it.get_height() / 2) - icon_size, id(home_icon), home_preset_color);
+          it.print((it.get_width()/2) - (home_width / 2), it.get_height() / 2, id(roboto_24), home_preset_color, "Home");
+
+          // Render Sleep preset button
+          int sleep_width, sleep_height;
+          std::tie(sleep_width, sleep_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%s", "Sleep");
+          it.rectangle((it.get_width() * 3/4) - (sleep_width / 2) - margin, (it.get_height() / 2) - icon_size - margin, sleep_width + (margin * 2), icon_size + sleep_height + (margin * 2), sleep_preset_color);
+          it.image((it.get_width() * 3/4) - (icon_size / 2), (it.get_height() / 2) - icon_size, id(sleep_icon), sleep_preset_color);
+          it.print((it.get_width() * 3/4) - (sleep_width / 2), it.get_height() / 2, id(roboto_24), sleep_preset_color, "Sleep");
+      ### >>>>>>>>>>>>> Weather Station Page <<<<<<<<<<<<<<< ###
+      - id: weather_station_page
+        lambda: |-
+          // Show time
+          it.strftime(5, 5, id(roboto_16), "%I:%M %p", id(my_time).now());
+          // Show X - close button top right
+          it.image(it.get_width() - 5, 5, id(close_icon), ImageAlign::TOP_RIGHT);
+          // Temp
+          it.printf(5, it.get_height() * 1/10, id(roboto_10), "Temperature: %.0f°", id(outdoor_temp_sensor).state);
+          // Humidity
+          it.printf(5, it.get_height() * 2/10, id(roboto_10), "Humidity: %.0f%%", id(outdoor_humidity_sensor).state);
+          // Feels Like Temp
+          it.printf(5, it.get_height() * 3/10, id(roboto_10), "Feels Like: %.0f°", id(outdoor_feels_like_temp_sensor).state);
+          // Absolute Pressure
+          it.printf(5, it.get_height() * 4/10, id(roboto_10), "Abs Pressure: %.0finHg", id(outdoor_absolute_pressure_sensor).state);
+          // Relative Pressure
+          it.printf(5, it.get_height() * 5/10, id(roboto_10), "Rel Pressure: %.0finHg", id(outdoor_relative_pressure_sensor).state);
+          // Dew Point
+          it.printf(5, it.get_height() * 6/10, id(roboto_10), "Dew Point: %.0f°", id(outdoor_dew_point_sensor).state);
+          // Solar UV Index
+          it.printf(5, it.get_height() * 7/10, id(roboto_10), "Solar UV Index: %.0f", id(outdoor_solar_uv_index_sensor).state);
+          // Solar Rad W/m2 & Lux
+          it.printf(5, it.get_height() * 8/10, id(roboto_10), "Solar Rad: %.0fW/m2 (%.0f lux)", id(outdoor_solar_rad_watts_sensor).state, id(outdoor_solar_rad_lux_sensor).state);
+          // Wind Speed & Direction
+          it.printf(5, it.get_height() * 9/10, id(roboto_10), "Wind: %.0fmph (%.0f°)", id(outdoor_wind_speed_sensor).state, id(outdoor_wind_direction_sensor).state);
+          // Wind Gust
+          it.printf(it.get_width()/2, it.get_height() * 9/10, id(roboto_10), "Wind Gust: %.0fmph", id(outdoor_wind_gust_sensor).state);
+          // Event Rain
+          it.printf(it.get_width()/2, it.get_height() * 1/10, id(roboto_10), "Event Rain: %.2fin", id(outdoor_event_rain_sensor).state);
+          // Hourly Rain Rate
+          it.printf(it.get_width()/2, it.get_height() * 2/10, id(roboto_10), "Hourly Rain Rate: %.2fin", id(outdoor_hourly_rain_rate_sensor).state);
+          // Last Rain - date time
+          auto last_rain = id(outdoor_last_rain_sensor).state;
+          it.printf(it.get_width()/2, it.get_height() * 3/10, id(roboto_10), "Last Rain: %s %s", last_rain.substr(0,10).c_str(), last_rain.substr(11, 5).c_str());
+          // Daily Rain
+          it.printf(it.get_width()/2, it.get_height() * 4/10, id(roboto_10), "Daily Rain: %.2fin", id(outdoor_daily_rain_sensor).state);
+          // Weekly Rain
+          it.printf(it.get_width()/2, it.get_height() * 5/10, id(roboto_10), "Weekly Rain: %.2fin", id(outdoor_weekly_rain_sensor).state);
+          // Monthly Rain
+          it.printf(it.get_width()/2, it.get_height() * 6/10, id(roboto_10), "Monthly Rain: %.2fin", id(outdoor_monthly_rain_sensor).state);
+          // Yearly Rain
+          it.printf(it.get_width()/2, it.get_height() * 7/10, id(roboto_10), "Yearly Rain: %.2fin", id(outdoor_yearly_rain_sensor).state);
+          // Lifetime Rain
+          it.printf(it.get_width()/2, it.get_height() * 8/10, id(roboto_10), "Lifetime Rain: %.2fin", id(outdoor_lifetime_rain_sensor).state);
+
+
+
+### >>>>>>>>>>>>> Touch Screen <<<<<<<<<<<<<<< ###
+touchscreen:
+  platform: xpt2046
+  id: my_touchscreen
+  cs_pin: GPIO32 # White
+  update_interval: 50ms
+  threshold: 400
+  transform:
+      swap_xy: true
+  calibration:
+    x_min: 203
+    x_max: 3839
+    y_min: 340
+    y_max: 3849
+  on_touch:
+    - binary_sensor.template.publish:
+        id: touching
+        state: ON
+    - lambda: |-
+          ESP_LOGI("cal", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+              touch.x,
+              touch.y,
+              touch.x_raw,
+              touch.y_raw
+              );
+  on_release:
+    - binary_sensor.template.publish:
+        id: touching
+        state: OFF
+
+
+
+### >>>>>>>>>>>>> Binary Sensors <<<<<<<<<<<<<<< ###
+binary_sensor:
+  ### >>>>>>>>>>>>> Home Page Touch Areas <<<<<<<<<<<<<<< ###
+  - platform: touchscreen
+    id: temp_down # Temp Down Button
+    x_min: 70
+    x_max: 130
+    y_min: 100
+    y_max: 150
+    page_id: home_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            target_temperature_low: !lambda 
+              auto current_mode = id(${node_id}_climate).mode;
+              if (current_mode == CLIMATE_MODE_HEAT)
+              {
+                auto target_temp_in_f = id(${node_id}_climate).target_temperature_low * (9.0/5.0) + 32.0;
+                return ((target_temp_in_f - 1) - 32) * 5/9;
+              }
+              auto lowest_temp = 50;
+              return ((lowest_temp) - 32) * 5/9; // Convert back to celsius
+            target_temperature_high: !lambda 
+              auto current_mode = id(${node_id}_climate).mode;
+              if (current_mode == CLIMATE_MODE_COOL)
+              {
+                auto target_temp_in_f = id(${node_id}_climate).target_temperature_high * (9.0/5.0) + 32.0;
+                return ((target_temp_in_f - 1) - 32) * 5/9;
+              }
+              auto highest_temp = 86;
+              return ((highest_temp) - 32) * 5/9; // Convert back to celsius
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen # Temp Up Button
+    id: temp_up
+    x_min: 205
+    x_max: 260
+    y_min: 100
+    y_max: 150
+    page_id: home_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            target_temperature_low: !lambda
+              auto current_mode = id(${node_id}_climate).mode;
+              if (current_mode == CLIMATE_MODE_HEAT)
+              {
+                auto target_temp_in_f = id(${node_id}_climate).target_temperature_low * (9.0/5.0) + 32.0;
+                return ((target_temp_in_f + 1) - 32) * 5/9;
+              }
+              auto lowest_temp = 50;
+              return ((lowest_temp) - 32) * 5/9; // Convert back to celsius
+            target_temperature_high: !lambda 
+              auto current_mode = id(${node_id}_climate).mode;
+              if (current_mode == CLIMATE_MODE_COOL)
+              {
+                auto target_temp_in_f = id(${node_id}_climate).target_temperature_high * (9.0/5.0) + 32.0;
+                return ((target_temp_in_f + 1) - 32) * 5/9;
+              }
+              auto highest_temp = 86;
+              return ((highest_temp) - 32) * 5/9; // Convert back to celsius
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen # Mode Button
+    id: mode_select
+    x_min: 0
+    x_max: 55
+    y_min: 205
+    y_max: 240
+    page_id: home_page
+    on_press:
+      then:
+        - display.page.show: mode_page
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen # Preset Button
+    id: preset_select
+    x_min: 120
+    x_max: 200
+    y_min: 30
+    y_max: 60
+    page_id: home_page
+    on_press:
+      then:
+        - display.page.show: preset_page
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen # External Weather Button
+    id: open_weather_button
+    x_min: 270
+    x_max: 320
+    y_min: 0
+    y_max: 50
+    page_id: home_page
+    on_release:
+      then:
+        - display.page.show: weather_station_page
+        - component.update: ${node_id}_tft_display
+  ### >>>>>>>>>>>>> Mode Page Touch Areas <<<<<<<<<<<<<<< ###
+  - platform: touchscreen
+    id: set_cool_mode
+    x_min: 50
+    x_max: 115
+    y_min: 90
+    y_max: 150
+    page_id: mode_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            mode: COOL
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen
+    id: set_off_mode
+    x_min: 135
+    x_max: 200
+    y_min: 90
+    y_max: 150
+    page_id: mode_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            mode: "OFF"
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen
+    id: set_heat_mode
+    x_min: 220
+    x_max: 285
+    y_min: 90
+    y_max: 150
+    page_id: mode_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            mode: "HEAT"
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  ### >>>>>>>>>>>>> Preset Page Touch Areas <<<<<<<<<<<<<<< ###
+  - platform: touchscreen
+    id: set_away_preset
+    x_min: 50
+    x_max: 115
+    y_min: 90
+    y_max: 150
+    page_id: preset_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            preset: AWAY
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen
+    id: set_home_preset
+    x_min: 135
+    x_max: 200
+    y_min: 90
+    y_max: 150
+    page_id: preset_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            preset: HOME
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  - platform: touchscreen
+    id: set_sleep_preset
+    x_min: 220
+    x_max: 285
+    y_min: 90
+    y_max: 150
+    page_id: preset_page
+    on_press:
+      then:
+        - climate.control:
+            id: ${node_id}_climate
+            preset: SLEEP
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  ### >>>>>>>>>>>>> Weather Page Touch Areas <<<<<<<<<<<<<<< ###
+  - platform: touchscreen
+    id: close_button
+    x_min: 270
+    x_max: 320
+    y_min: 0
+    y_max: 50
+    page_id: weather_station_page
+    on_release:
+      then:
+        - display.page.show: home_page
+        - component.update: ${node_id}_tft_display
+  ### >>>>>>>>>>>>> Backlight Binary Sensor <<<<<<<<<<<<<<< ###
+  - platform: template
+    id: touching
+    filters:
+      delayed_off: 20s
+    on_press:
+      - light.control: 
+          id: back_light
+          brightness: 100%
+    on_release:
+      - light.control: 
+          id: back_light
+          brightness: 35%
+  ### >>>>>>>>>>>>> Recirculation Pump <<<<<<<<<<<<<<< ###
+  - platform: homeassistant
+    id: recirculation_pump
+    entity_id: switch.recirculation_pump
+    on_state:
+      then:
+        - component.update: ${node_id}_tft_display
+
+
+
+### >>>>>>>>>>>>> Backlight <<<<<<<<<<<<<<< ###
+# Define a PWM output on the ESP32
+output:
+  - platform: ledc
+    pin: 25 # Green
+    id: backlight_output
+# Define a monochromatic, dimmable light for the backlight
+light:
+  - platform: monochromatic
+    output: backlight_output
+    name: "Display Backlight"
+    id: back_light
+    restore_mode: RESTORE_DEFAULT_ON
