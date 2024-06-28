@@ -42,7 +42,17 @@ time:
 
 ### >>>>>>>>>>>>> Text Sensors <<<<<<<<<<<<<<< ###
 text_sensor:
-    # Last Rain - date time
+  ### >>>>>>>>>>>>> ESPHome Version <<<<<<<<<<<<<<< ###
+  - platform: version
+    name: ESPHome Version
+    id: ${node_id}_esphome_version  
+  ### >>>>>>>>>>>>> IP Address <<<<<<<<<<<<<<< ###
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+      id: ${node_id}_ip_address
+      icon: mdi:ip-network
+  ### >>>>>>>>>>>>> Last Rain - date time <<<<<<<<<<<<<<< ###
   - platform: homeassistant
     name: outdoor_last_rain_sensor
     id: outdoor_last_rain_sensor
@@ -69,18 +79,16 @@ script:
               auto illuminance = id(${node_id}_illuminance).state;
               auto min_distance = std::min({ id(t1_distance).state, id(t2_distance).state, id(t3_distance).state });
               auto call = id(back_light).turn_on();
+              auto target_brightness = 0.35;
               if (!id(${node_id}_occupancy).state) // No occupancy detected
               {
-                call.set_brightness(0);
+                target_brightness = 0;
               }
-              else if (min_distance < 4 && illuminance > 0.4) // within 3ft and illuminance lux is greater than 2
+              else if (min_distance < 4 && illuminance > 0.4) // within Yft and illuminance lux is greater than N
               {
-                call.set_brightness(1.0);
+                target_brightness = 1.0;
               }
-              else if ((min_distance >= 4 && min_distance < 6) || (min_distance < 4 && illuminance <= 0.4)) // Greater than 3ft or less than 3ft and illuminance is less than 2
-              {
-                call.set_brightness(0.35);
-              }
+              call.set_brightness(target_brightness);
               call.perform();
   - id: update_display_on_weather_page
     then:
@@ -93,16 +101,23 @@ script:
 
 ### >>>>>>>>>>>>> I2C <<<<<<<<<<<<<<< ###
 i2c:
-  - id: bus_a
-    sda: 21 #  Green
-    scl: 22 #  Blue
-    scan: true
+  sda: 21 #  Green
+  scl: 22 #  Blue
+  scan: true
+  frequency: 400kHz
+
+debug:
+  update_interval: 5s
 
 ### >>>>>>>>>>>>> Sensors <<<<<<<<<<<<<<< ###
 sensor:
-  - platform: uptime
-    id: ${node_id}_uptime
-    name: Uptime
+### >>>>>>>>>>>>> Common Diagnostic Sensors <<<<<<<<<<<<<<< ###
+  - <<: !include .uptime.sensor.yaml
+  - <<: !include .wifi-signal.sensor.yaml
+  - <<: !include .wifi-signal-percentage.sensor.yaml
+  - platform: debug
+    free:
+      name: "Heap Free"
 ### >>>>>>>>>>>>> Humidity Sensor <<<<<<<<<<<<<<< ###
   - platform: homeassistant
     id: ${node_id}_humidity
@@ -301,6 +316,7 @@ LD2450:
   uart_id: uart_bus
   flip_x_axis: true
   fast_off_detection: true
+  tilt_angle_margin: 0deg
   max_detection_tilt_angle:
     id: ${node_id}_max_tilt_angle
     name: Max Tilt Angle
@@ -405,16 +421,9 @@ LD2450:
 
 ### >>>>>>>>>>>>> Switches <<<<<<<<<<<<<<< ###
 switch:
-  - platform: restart # Restart
-    name: Restart
-    id: ${node_id}_restart
-    icon: "mdi:restart"
-  - platform: shutdown # Shutdown
-    name: Shutdown
-    id: ${node_id}_shutdown
-  - platform: safe_mode # Safe Mode
-    name: Restart (Safe Mode)"
-    id: ${node_id}_safe_mode
+  - <<: !include .restart.switch.yaml
+  - <<: !include .shutdown.switch.yaml
+  - <<: !include .safe-mode.switch.yaml
   - platform: template # HVAC Power - Source: https://community.home-assistant.io/t/switch-linked-to-homeassistant-switch/593354/3?u=bsell93
     id: hvac_power
     optimistic: true
@@ -701,8 +710,11 @@ display:
             std::tie(target_temp_width, target_temp_height) = GetTextWidthAndHeight(&it, id(roboto_24), "%.0f°", target_temp);
             it.printf((it.get_width() / 2), (it.get_height() / 2) + (current_temp_height * 0.75) + (margin * 2), id(roboto_24), current_mode_color, TextAlign::CENTER, "%.0f°", target_temp);
 
-            // Draw rectangle around target temp to indicate button
-            it.rectangle((it.get_width() / 2) - (target_temp_width / 2) - margin, (it.get_height() / 2) + (current_temp_height / 2) + margin, target_temp_width + (margin * 2), target_temp_height + (margin * 2), current_mode_color);
+            if (id(active_climate_action) != "idle")
+            {
+              // Draw rectangle around target temp to indicate button
+              it.rectangle((it.get_width() / 2) - (target_temp_width / 2) - margin, (it.get_height() / 2) + (current_temp_height / 2) + margin, target_temp_width + (margin * 2), target_temp_height + (margin * 2), current_mode_color);
+            }
           }
           // Mode icon
           it.image(margin, it.get_height() - icon_size - margin, active_mode_icon);
@@ -888,6 +900,10 @@ touchscreen:
 
 ### >>>>>>>>>>>>> Binary Sensors <<<<<<<<<<<<<<< ###
 binary_sensor:
+  ### >>>>>>>>>>>>> Connection Status <<<<<<<<<<<<<<< ###
+  - platform: status
+    name: Connection Status
+    id: ${node_id}_connection_status
   ### >>>>>>>>>>>>> Home Page Touch Areas <<<<<<<<<<<<<<< ###
   - platform: touchscreen
     id: temp_down # Temp Down Button
